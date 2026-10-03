@@ -1,5 +1,6 @@
 # Python
 __pycache__/
+*.pyc
 *.py[cod]
 *$py.class
 *.so
@@ -29,7 +30,7 @@ env/
 ENV/
 env.bak/
 venv.bak/
-.
+
 # Audio files
 *.wav
 *.mp3
