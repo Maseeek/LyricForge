@@ -1,150 +1,56 @@
 # LyricForge
 
-**Multi-Agent AI Audio Transformation & Vocal Synthesis Pipeline**  
-*Built at HackNotts 2025 (University of Nottingham)*
+LyricForge takes a song and a theme, rewrites the lyrics around that theme, sings them with an AI voice, and mixes the new vocals back over the original instrumental.
 
-[![Python](https://img.shields.io/badge/Python-3.8+-3776AB?logo=python&logoColor=white)](https://www.python.org/)
-[![Google Gemini](https://img.shields.io/badge/Google_Gemini-API-8E75B2?logo=googlegemini&logoColor=white)](https://ai.google.dev/)
-[![ElevenLabs](https://img.shields.io/badge/ElevenLabs-TTS_%26_Voice_Cloning-000000)](https://elevenlabs.io/)
-[![OpenAI Whisper](https://img.shields.io/badge/OpenAI-Whisper_ASR-412991?logo=openai&logoColor=white)](https://github.com/openai/whisper)
-[![Spleeter](https://img.shields.io/badge/Deezer-Spleeter-FF0092)](https://github.com/deezer/spleeter)
+Built in a team at HackNotts 2025 (University of Nottingham).
 
-**LyricForge** is an end-to-end multi-agent audio engineering and generative AI pipeline that decomposes full-mix songs into isolated stems, extracts word-level timestamped transcriptions, rewrites lyrics around arbitrary semantic themes with syllabic and cadence constraints, synthesizes neural vocals matched to target artist timbres, and masters the transformed vocal track back over the original instrumental accompaniment.
+## What it does
 
----
+- Splits a song into a vocal track and an instrumental track.
+- Transcribes the vocals with word-level timestamps.
+- Rewrites the lyrics around any theme you give it, such as "space exploration", while trying to keep the same syllable count and rhythm per line.
+- Picks an AI voice that sounds like a chosen artist and sings the new lyrics.
+- Mixes the new vocals over the original instrumental and saves a WAV file.
 
-## System Architecture
+## How it's built
 
-```mermaid
-flowchart LR
-    A[Source Audio<br/>MP3 / WAV] --> B[1. Stem Isolation & ASR Agent<br/>separate_audio.py<br/>Spleeter 2-Stems + Whisper]
-    B -->|Isolated Vocals + Word Timestamps| C[2. Semantic & Syllabic Lyric Agent<br/>pipeline.py<br/>Google Gemini Pro]
-    B -->|Isolated Instrumental Stem| F[5. Multi-Track Audio Mastering<br/>pydub / FFmpeg]
-    C -->|Theme-Adapted Lyrics| D[3. Neural Voice Synthesis Agent<br/>tryVoice.py / pipeline.py<br/>Gemini Timbre Analysis + ElevenLabs API]
-    D -->|Synthesized Vocal Track| E[4. Temporal Alignment & Cadence Sync<br/>DTW & Timestamp Boundary Mapping]
-    B -->|Original Cadence Map| E
-    E -->|Time-Aligned Vocals| F
-    F --> G[Mastered Output Track<br/>output/*_themed_*.wav]
-```
+It is a Python command-line tool. `pipeline.py` runs five agents in order, each a small class with one job:
 
-### 5-Stage Multi-Agent Pipeline
+1. Pre-process: Spleeter's 2-stem model separates vocals from the accompaniment, then Whisper (`base` model) transcribes the vocals with `word_timestamps=True`.
+2. Lyric generation: Google Gemini rewrites the transcript to the theme. The prompt asks it to keep the structure, rhythm and syllables per line.
+3. Voice synthesis: Gemini writes a short description of the target artist's voice, then picks the closest match from the ElevenLabs voice library. ElevenLabs (`eleven_multilingual_v2`) generates the vocal track.
+4. Alignment: a placeholder for now. The plan was to time the new vocals to the original using dynamic time warping (`fastdtw`).
+5. Mixing: pydub trims both tracks to the same length and overlays them.
 
-1. **Stem Isolation & ASR Agent (`separate_audio.py`, `PreProcessAgent`)**
-   - Decomposes stereo source audio into isolated vocal (`vocals.wav`) and accompaniment (`accompaniment.wav`) stems using Deezer's pretrained 2-stem U-Net source separation model (**Spleeter**).
-   - Runs automatic speech recognition (ASR) on the isolated vocal stem via **OpenAI Whisper** (`word_timestamps=True`), extracting segment- and word-level temporal boundaries alongside language metadata.
+Each stage falls back instead of crashing where it can. With no Gemini key the original lyrics are kept, and with no ElevenLabs key the original vocals are used.
 
-2. **Semantic & Syllabic Lyric Agent (`pipeline.py`, `LyricGenerationAgent`)**
-   - Prompts **Google Gemini** (`gemini-pro`) to rewrite the transcribed lyrics around a user-specified thematic domain while enforcing structural invariants: line-by-line syllable count parity, prosodic rhythm, and stanza cadence so the generated lyrics fit the original vocal phrasing.
+## My role
 
-3. **Neural Voice Synthesis Agent (`tryVoice.py`, `VoiceSynthAgent`)**
-   - Performs artist timbre profiling via **Google Gemini** (analyzing vocal register, tone quality, delivery dynamics, and acoustic characteristics of a target artist) and matches the profile against available **ElevenLabs** voice models.
-   - Synthesizes high-fidelity neural vocal tracks (`eleven_multilingual_v2`, 44.1 kHz / 128 kbps MP3) via the **ElevenLabs TTS & Voice Cloning API**.
+I built this with Joshua Bakata. I set up the repository, the five-stage pipeline structure and the stem separation stage. Joshua built the working ElevenLabs voice synthesis agent and its test scripts.
 
-4. **Temporal Alignment & Cadence Synchronization (`AlignerAgent`)**
-   - Aligns synthesized vocal segments against the original Whisper timestamp boundaries and cadence map using Dynamic Time Warping (`fastdtw` / `librosa`) so vocal phrasing locks onto the underlying musical meter.
+## Run it locally
 
-5. **Multi-Track Audio Mastering (`MixerAgent`)**
-   - Normalizes track durations, trims or pads stem boundaries, and overlays the aligned neural vocals onto the isolated instrumental stem via **pydub** and **FFmpeg**, exporting a mastered WAV mix (`output/<song>_themed_<theme>.wav`).
-
----
-
-## Project Structure
-
-```text
-LyricForge/
-├── pipeline.py          # End-to-end 5-agent orchestrator & CLI entrypoint
-├── separate_audio.py    # Spleeter 2-stem separation microservice endpoint
-├── tryVoice.py          # Standalone ElevenLabs neural TTS synthesis utility
-├── test_api_key.py      # Environment & Gemini API connectivity diagnostics
-├── requirements.txt     # Python audio DSP & generative AI dependencies
-└── .env.example         # Template for required API credentials
-```
-
----
-
-## Getting Started
-
-### Prerequisites
-
-- **Python 3.8+**
-- **FFmpeg** installed and available on your system `PATH` (required by `spleeter`, `whisper`, and `pydub`)
-- **Google Gemini API Key** (`GEMINI_API_KEY`)
-- **ElevenLabs API Key** (`ELEVENLABS_API_KEY`)
-
-### 1. Installation
+You need Python 3.8+, FFmpeg on your `PATH`, a Google Gemini API key and an ElevenLabs API key.
 
 ```bash
 git clone https://github.com/Maseeek/LyricForge.git
 cd LyricForge
-
 python -m venv .venv
-# Windows
-.\.venv\Scripts\activate
-# macOS / Linux
 source .venv/bin/activate
-
-pip install -r requirements.txt
+pip install -r requirements.txt elevenlabs
+cp .env.example .env   # then add GEMINI_API_KEY and ELEVENLABS_API_KEY
 ```
 
-### 2. Environment Configuration
-
-Copy `.env.example` to `.env` and populate your API credentials:
+Run it on a song:
 
 ```bash
-cp .env.example .env
-```
-
-```ini
-GEMINI_API_KEY=your_gemini_api_key
-ELEVENLABS_API_KEY=your_elevenlabs_api_key
-```
-
-Verify your environment setup and API connectivity:
-
-```bash
-python test_api_key.py
-```
-
----
-
-## Usage
-
-Run the full 5-stage transformation pipeline via `pipeline.py`:
-
-```bash
-python pipeline.py --song <path_to_audio> --theme "<target_theme>" [--artist "<artist_voice_style>"]
-```
-
-### Examples
-
-```bash
-# Rewrite a track around a space exploration theme with artist-matched vocal synthesis
 python pipeline.py --song input.mp3 --theme "space exploration" --artist "Drake"
-
-# Transform a WAV track into a medieval fantasy ballad
-python pipeline.py --song my_song.wav --theme "medieval fantasy" --artist "J. Cole"
 ```
 
-### CLI Arguments
+`--artist` is optional. You can also pass `--gemini-api-key` and `--elevenlabs-api-key` instead of using `.env`.
 
-| Argument | Required | Description |
-| :--- | :---: | :--- |
-| `--song` | Yes | Path to the source audio file (`MP3`, `WAV`, `FLAC`, etc.) |
-| `--theme` | Yes | Target semantic theme for lyric generation |
-| `--artist` | No | Reference artist name for Gemini vocal timbre profiling and ElevenLabs voice selection |
-| `--gemini-api-key` | No | Override `GEMINI_API_KEY` environment variable |
-| `--elevenlabs-api-key` | No | Override `ELEVENLABS_API_KEY` environment variable |
+Output goes to `output/`: the separated stems in `output/separated/<song>/`, the generated vocals in `output/new_vocals.mp3`, and the final mix in `output/<song>_themed_<theme>.wav`.
 
-### Output Artifacts
+## Status
 
-All generated artifacts are written to the `output/` directory:
-- `output/separated/<song_name>/vocals.wav` — Isolated vocal stem
-- `output/separated/<song_name>/accompaniment.wav` — Isolated instrumental stem
-- `output/new_vocals.mp3` — Synthesized ElevenLabs vocal track
-- `output/<song_name>_themed_<theme>.wav` — Final mastered multi-track mix
-
----
-
-## License
-
-MIT License
+Hackathon prototype. The alignment stage is not implemented yet, so the new vocals are not timed to the beat. MIT License.
